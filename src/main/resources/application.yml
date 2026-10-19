@@ -1,0 +1,79 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: artagram-gateway
+  config:
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:../.env[.properties]
+  cloud:
+    gateway:
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_FIRST
+      routes:
+        # 1. Autenticación y JWKS -> artagram-auth
+        - id: auth-route
+          uri: ${AUTH_SERVICE_URL:http://localhost:8084}
+          predicates:
+            - Path=/api/auth/**, /.well-known/jwks.json
+
+        # 2. Perfiles, Seguidores y Pagos/Suscripciones -> artagram-users
+        - id: users-route
+          uri: ${USERS_SERVICE_URL:http://localhost:8084}
+          predicates:
+            - Path=/api/perfil/**, /api/perfiles/**, /api/artistas/**, /api/pagos/**
+
+        # 3. Feed, Publicaciones, Comentarios, IA y Media -> artagram-feed
+        - id: feed-route
+          uri: ${FEED_SERVICE_URL:http://localhost:8084}
+          predicates:
+            - Path=/api/feed/**, /api/publicaciones/**, /api/comentarios/**, /api/ia/**, /media/**
+
+        # 4. Chat Personal, Chat de Comunidad (REST) y Alertas SSE -> artagram-chat
+        # (Debe ir antes de lienzo-rest-route para que /api/comunidades/{id}/chat vaya a Chat)
+        - id: chat-route
+          uri: ${CHAT_SERVICE_URL:http://localhost:8084}
+          predicates:
+            - Path=/api/mensajes/**, /api/comunidades/*/chat, /api/notificaciones/**
+
+        # 5. Comunidades, Lienzo, Banner, Modo Fiesta y Admin -> artagram-lienzo
+        - id: lienzo-rest-route
+          uri: ${LIENZO_SERVICE_URL:http://localhost:8084}
+          predicates:
+            - Path=/api/comunidades/**, /api/fiestas/**, /api/admin/**, /api/media/**
+
+        # 6. WebSocket STOMP (/ws) -> artagram-lienzo
+        - id: lienzo-ws-route
+          uri: ${LIENZO_WS_URL:ws://localhost:8084}
+          predicates:
+            - Path=/ws, /ws/**
+
+app:
+  gateway:
+    jwt-enabled: ${GATEWAY_JWT_ENABLED:false}
+    jwks-uri: ${AUTH_JWKS_URI:http://localhost:8081/.well-known/jwks.json}
+    cors-allowed-origins: ${CORS_ORIGINS:http://localhost:5173}
+    rate-limit-per-second: ${GATEWAY_RATE_LIMIT_PER_SEC:120}
+
+management:
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,gateway
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  level:
+    root: INFO
+    com.artagram: DEBUG
