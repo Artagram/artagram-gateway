@@ -2,6 +2,7 @@ package com.artagram.gateway.filter;
 
 import com.artagram.gateway.config.GatewayProperties;
 import com.artagram.gateway.error.ErrorResponseWriter;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
@@ -28,6 +29,7 @@ public final class JwtGatewayGlobalFilter implements GlobalFilter, Ordered {
     private final ErrorResponseWriter errorWriter;
     private volatile ReactiveJwtDecoder jwtDecoder;
 
+    @Autowired
     public JwtGatewayGlobalFilter(GatewayProperties properties, ErrorResponseWriter errorWriter) {
         this.properties = properties;
         this.errorWriter = errorWriter;

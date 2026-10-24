@@ -19,11 +19,13 @@ spring:
           predicates:
             - Path=/api/auth/**, /.well-known/jwks.json
 
-        # 2. Perfiles, Seguidores y Pagos/Suscripciones -> artagram-users
+        # 2. Perfiles, Seguidores y Media (presign/servir) -> artagram-users
+        # (/api/media/** vivia por error en artagram-lienzo; artagram-users ya
+        # tiene su propio MediaController idéntico desde antes de hoy)
         - id: users-route
           uri: ${USERS_SERVICE_URL:http://localhost:8084}
           predicates:
-            - Path=/api/perfil/**, /api/perfiles/**, /api/artistas/**, /api/pagos/**
+            - Path=/api/perfil/**, /api/perfiles/**, /api/artistas/**, /api/media/**
 
         # 3. Feed, Publicaciones, Comentarios, IA y Media -> artagram-feed
         - id: feed-route
@@ -31,24 +33,48 @@ spring:
           predicates:
             - Path=/api/feed/**, /api/publicaciones/**, /api/comentarios/**, /api/ia/**, /media/**
 
-        # 4. Chat Personal, Chat de Comunidad (REST) y Alertas SSE -> artagram-chat
-        # (Debe ir antes de lienzo-rest-route para que /api/comunidades/{id}/chat vaya a Chat)
+        # 4. Chat Personal y Chat de Comunidad (REST) -> artagram-chat
+        # (Debe ir antes de canvas-rest-route para que /api/comunidades/{id}/chat vaya a Chat)
         - id: chat-route
           uri: ${CHAT_SERVICE_URL:http://localhost:8084}
           predicates:
-            - Path=/api/mensajes/**, /api/comunidades/*/chat, /api/notificaciones/**
+            - Path=/api/mensajes/**, /api/comunidades/*/chat
 
-        # 5. Comunidades, Lienzo, Banner, Modo Fiesta y Admin -> artagram-lienzo
-        - id: lienzo-rest-route
-          uri: ${LIENZO_SERVICE_URL:http://localhost:8084}
+        # 5. Comunidades (CRUD/membresia/banner), Lienzo y Modo Fiesta -> artagram-canvas
+        # (corte de trafico real: ya cubierto 1:1 por canvas, verificado esta sesion)
+        - id: canvas-rest-route
+          uri: ${CANVAS_SERVICE_URL:http://localhost:8088}
           predicates:
-            - Path=/api/comunidades/**, /api/fiestas/**, /api/admin/**, /api/media/**
+            - Path=/api/comunidades/**, /api/fiestas/**
 
-        # 6. WebSocket STOMP (/ws) -> artagram-lienzo
-        - id: lienzo-ws-route
-          uri: ${LIENZO_WS_URL:ws://localhost:8084}
+        # 6. KPIs / Dashboard admin -> artagram-users
+        # (corte de trafico real: ya es dueño de usuarios.creadoEn/premium y
+        # ahora tambien de los eventos minimos de login/sesion-colaborativa
+        # que alimentan los 4 KPIs de HU-37 — backv1 ya no sirve ESTE path)
+        - id: admin-route
+          uri: ${USERS_SERVICE_URL:http://localhost:8084}
+          predicates:
+            - Path=/api/admin/**
+
+        # 7. WebSocket STOMP (/ws) -> artagram-canvas
+        # (corte de trafico real: party, lienzo, banner y chat de comunidad/personal
+        # ya estan 1:1 en canvas — backv1 ya no sirve ningun trafico de /ws)
+        - id: canvas-ws-route
+          uri: ${CANVAS_WS_URL:ws://localhost:8088}
           predicates:
             - Path=/ws, /ws/**
+
+        # 8. Suscripciones y Pagos -> artagram-payment
+        - id: payment-route
+          uri: ${PAYMENT_SERVICE_URL:http://localhost:8089}
+          predicates:
+            - Path=/api/suscripcion/**, /api/pagos/**
+
+        # 8. Notificaciones (REST + SSE) -> artagram-notifications
+        - id: notifications-route
+          uri: ${NOTIFICATIONS_SERVICE_URL:http://localhost:8090}
+          predicates:
+            - Path=/api/notificaciones/**
 
 app:
   gateway:
