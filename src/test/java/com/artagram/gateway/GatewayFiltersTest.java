@@ -124,6 +124,14 @@ class GatewayFiltersTest {
                         .build());
         StepVerifier.create(filter.filter(adminSinRol, passThroughChain)).verifyComplete();
         assertThat(adminSinRol.getResponse().getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+
+        // La moderacion exige el mismo rol que /api/admin
+        MockServerWebExchange moderacionSinRol = MockServerWebExchange.from(
+                MockServerHttpRequest.get("/api/moderacion/reportes")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer token-valido")
+                        .build());
+        StepVerifier.create(filter.filter(moderacionSinRol, passThroughChain)).verifyComplete();
+        assertThat(moderacionSinRol.getResponse().getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }
 
     @Test

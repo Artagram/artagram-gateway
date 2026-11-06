@@ -73,7 +73,7 @@ public final class JwtGatewayGlobalFilter implements GlobalFilter, Ordered {
         return obtenerDecoder().decode(token)
                 .flatMap(jwt -> {
                     String rol = jwt.getClaimAsString("rol");
-                    if (path != null && path.startsWith("/api/admin/") && !"ADMIN".equalsIgnoreCase(rol)) {
+                    if (path != null && esRutaAdmin(path) && !"ADMIN".equalsIgnoreCase(rol)) {
                         return errorWriter.escribir(
                                 exchange,
                                 HttpStatus.FORBIDDEN,
@@ -138,5 +138,9 @@ public final class JwtGatewayGlobalFilter implements GlobalFilter, Ordered {
             }
         }
         return actual;
+    }
+
+    private boolean esRutaAdmin(String path) {
+        return path.startsWith("/api/admin/") || path.startsWith("/api/moderacion/");
     }
 }
