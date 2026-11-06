@@ -71,9 +71,9 @@ class GatewayFiltersTest {
         ReactiveJwtDecoder decoder = mock(ReactiveJwtDecoder.class);
         JwtGatewayGlobalFilter filter = new JwtGatewayGlobalFilter(props, errorWriter, decoder);
 
-        // Ruta pública (/api/auth/login) pasa sin token
+        // Ruta pública (/api/auth/google) pasa sin token
         MockServerWebExchange loginExchange = MockServerWebExchange.from(
-                MockServerHttpRequest.post("/api/auth/login").build());
+                MockServerHttpRequest.post("/api/auth/google").build());
         StepVerifier.create(filter.filter(loginExchange, passThroughChain)).verifyComplete();
         assertThat(loginExchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.OK);
 
