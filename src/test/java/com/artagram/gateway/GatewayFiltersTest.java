@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 
 import com.artagram.gateway.config.GatewayProperties;
 import com.artagram.gateway.error.ErrorResponseWriter;
+import com.artagram.gateway.filter.IdentityHeaderStripFilter;
 import com.artagram.gateway.filter.InternalPathBlockFilter;
 import com.artagram.gateway.filter.JwtGatewayGlobalFilter;
 import com.artagram.gateway.filter.RateLimitGlobalFilter;
@@ -14,9 +15,11 @@ import com.artagram.gateway.filter.TraceIdGlobalFilter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
@@ -52,6 +55,26 @@ class GatewayFiltersTest {
                 MockServerHttpRequest.get("/api/feed").header("X-Trace-Id", "trace-fijo-12345").build());
         StepVerifier.create(filter.filter(conTrace, passThroughChain)).verifyComplete();
         assertThat(conTrace.getResponse().getHeaders().getFirst("X-Trace-Id")).isEqualTo("trace-fijo-12345");
+    }
+
+    @Test
+    void identityHeaderStripFilterEliminaLaIdentidadEnviadaPorElCliente() {
+        IdentityHeaderStripFilter filter = new IdentityHeaderStripFilter();
+        MockServerWebExchange exchange = MockServerWebExchange.from(
+                MockServerHttpRequest.delete("/api/auth/cuenta")
+                        .header("X-User-Id", "victima")
+                        .header("x-user-role", "ADMIN")
+                        .header("X-User-Roles", "ADMIN")
+                        .header("Authorization", "Bearer token")
+                        .build());
+        AtomicReference<HttpHeaders> recibidas = new AtomicReference<>();
+
+        StepVerifier.create(filter.filter(exchange, e -> {
+            recibidas.set(e.getRequest().getHeaders());
+            return Mono.empty();
+        })).verifyComplete();
+
+        assertThat(recibidas.get().keySet()).containsExactly("Authorization");
     }
 
     @Test
