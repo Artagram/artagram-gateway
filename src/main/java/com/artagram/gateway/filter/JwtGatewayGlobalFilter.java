@@ -111,9 +111,11 @@ public final class JwtGatewayGlobalFilter implements GlobalFilter, Ordered {
                 || path.startsWith("/api/pagos/webhook/")) {
             return true;
         }
-        return method == HttpMethod.GET
-                && path.startsWith("/api/perfiles/")
-                && !path.endsWith("/premium");
+        if (method != HttpMethod.GET) {
+            return false;
+        }
+        return path.startsWith("/api/publicaciones/artista/")
+                || (path.startsWith("/api/perfiles/") && !path.endsWith("/premium"));
     }
 
     private String extraerToken(ServerHttpRequest request) {

@@ -65,6 +65,23 @@ class GatewayFiltersTest {
     }
 
     @Test
+    void lasObrasDeUnArtistaSeLeenSinTokenPeroDestacarLoExige() {
+        GatewayProperties props = new GatewayProperties();
+        props.setJwtEnabled(true);
+        JwtGatewayGlobalFilter filter = new JwtGatewayGlobalFilter(props, errorWriter, mock(ReactiveJwtDecoder.class));
+
+        MockServerWebExchange lectura = MockServerWebExchange.from(
+                MockServerHttpRequest.get("/api/publicaciones/artista/a1/destacadas").build());
+        StepVerifier.create(filter.filter(lectura, passThroughChain)).verifyComplete();
+        assertThat(lectura.getResponse().getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        MockServerWebExchange escritura = MockServerWebExchange.from(
+                MockServerHttpRequest.put("/api/publicaciones/p1/destacar").build());
+        StepVerifier.create(filter.filter(escritura, passThroughChain)).verifyComplete();
+        assertThat(escritura.getResponse().getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
     void jwtFilterConBanderaActivaExigeTokenEnRutasProtegidasYPermiteRutasPublicas() {
         GatewayProperties props = new GatewayProperties();
         props.setJwtEnabled(true);
