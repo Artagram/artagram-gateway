@@ -10,11 +10,14 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.NimbusReactiveJwtDecoder;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
+
+import java.util.Optional;
 
 /**
  * Valida tokens JWT RS256 contra el endpoint JWKS de artagram-auth cuando
@@ -71,29 +74,36 @@ public final class JwtGatewayGlobalFilter implements GlobalFilter, Ordered {
         }
 
         return obtenerDecoder().decode(token)
-                .flatMap(jwt -> {
-                    String rol = jwt.getClaimAsString("rol");
-                    if (path != null && esRutaAdmin(path) && !"ADMIN".equalsIgnoreCase(rol)) {
-                        return errorWriter.escribir(
+                .map(Optional::of)
+                // Solo los fallos al validar el token son 401. Si se atraparan
+                // tambien los del servicio destino, quedarian ocultos como sesion expirada.
+                .onErrorResume(ex -> Mono.just(Optional.empty()))
+                .flatMap(jwt -> jwt
+                        .map(valido -> continuar(exchange, chain, path, valido))
+                        .orElseGet(() -> errorWriter.escribir(
                                 exchange,
-                                HttpStatus.FORBIDDEN,
-                                "SIN_PERMISO",
-                                "No tienes permisos de administrador para acceder a este recurso"
-                        );
-                    }
-                    ServerHttpRequest mutated = exchange.getRequest().mutate()
-                            .header("X-User-Id", jwt.getSubject() != null ? jwt.getSubject() : "")
-                            .header("X-User-Name", jwt.getClaimAsString("nombre") != null ? jwt.getClaimAsString("nombre") : "")
-                            .header("X-User-Role", rol != null ? rol : "USUARIO")
-                            .build();
-                    return chain.filter(exchange.mutate().request(mutated).build());
-                })
-                .onErrorResume(ex -> errorWriter.escribir(
-                        exchange,
-                        HttpStatus.UNAUTHORIZED,
-                        "NO_AUTENTICADO",
-                        "Tu sesión expiró o el token no es válido"
-                ));
+                                HttpStatus.UNAUTHORIZED,
+                                "NO_AUTENTICADO",
+                                "Tu sesión expiró o el token no es válido"
+                        )));
+    }
+
+    private Mono<Void> continuar(ServerWebExchange exchange, GatewayFilterChain chain, String path, Jwt jwt) {
+        String rol = jwt.getClaimAsString("rol");
+        if (path != null && esRutaAdmin(path) && !"ADMIN".equalsIgnoreCase(rol)) {
+            return errorWriter.escribir(
+                    exchange,
+                    HttpStatus.FORBIDDEN,
+                    "SIN_PERMISO",
+                    "No tienes permisos de administrador para acceder a este recurso"
+            );
+        }
+        ServerHttpRequest mutated = exchange.getRequest().mutate()
+                .header("X-User-Id", jwt.getSubject() != null ? jwt.getSubject() : "")
+                .header("X-User-Name", jwt.getClaimAsString("nombre") != null ? jwt.getClaimAsString("nombre") : "")
+                .header("X-User-Role", rol != null ? rol : "USUARIO")
+                .build();
+        return chain.filter(exchange.mutate().request(mutated).build());
     }
 
     private boolean esRutaPublica(HttpMethod method, String path) {

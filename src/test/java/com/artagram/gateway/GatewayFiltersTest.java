@@ -22,6 +22,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -62,6 +63,21 @@ class GatewayFiltersTest {
 
         StepVerifier.create(filter.filter(exchange, passThroughChain)).verifyComplete();
         assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    void unFalloDelServicioDestinoNoSeConvierteEnSesionExpirada() {
+        GatewayProperties props = new GatewayProperties();
+        props.setJwtEnabled(true);
+        ReactiveJwtDecoder decoder = mock(ReactiveJwtDecoder.class);
+        when(decoder.decode(any())).thenReturn(Mono.just(
+                Jwt.withTokenValue("t").header("alg", "RS256").subject("u1").claim("rol", "USUARIO").build()));
+        JwtGatewayGlobalFilter filter = new JwtGatewayGlobalFilter(props, errorWriter, decoder);
+        MockServerWebExchange exchange = MockServerWebExchange.from(
+                MockServerHttpRequest.get("/api/feed/explorar").header("Authorization", "Bearer t").build());
+        GatewayFilterChain chainConFallo = e -> Mono.error(new IllegalStateException("conexion rechazada"));
+
+        StepVerifier.create(filter.filter(exchange, chainConFallo)).verifyError(IllegalStateException.class);
     }
 
     @Test
