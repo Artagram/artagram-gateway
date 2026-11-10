@@ -22,6 +22,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -62,6 +63,38 @@ class GatewayFiltersTest {
 
         StepVerifier.create(filter.filter(exchange, passThroughChain)).verifyComplete();
         assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    void unFalloDelServicioDestinoNoSeConvierteEnSesionExpirada() {
+        GatewayProperties props = new GatewayProperties();
+        props.setJwtEnabled(true);
+        ReactiveJwtDecoder decoder = mock(ReactiveJwtDecoder.class);
+        when(decoder.decode(any())).thenReturn(Mono.just(
+                Jwt.withTokenValue("t").header("alg", "RS256").subject("u1").claim("rol", "USUARIO").build()));
+        JwtGatewayGlobalFilter filter = new JwtGatewayGlobalFilter(props, errorWriter, decoder);
+        MockServerWebExchange exchange = MockServerWebExchange.from(
+                MockServerHttpRequest.get("/api/feed/explorar").header("Authorization", "Bearer t").build());
+        GatewayFilterChain chainConFallo = e -> Mono.error(new IllegalStateException("conexion rechazada"));
+
+        StepVerifier.create(filter.filter(exchange, chainConFallo)).verifyError(IllegalStateException.class);
+    }
+
+    @Test
+    void lasObrasDeUnArtistaSeLeenSinTokenPeroDestacarLoExige() {
+        GatewayProperties props = new GatewayProperties();
+        props.setJwtEnabled(true);
+        JwtGatewayGlobalFilter filter = new JwtGatewayGlobalFilter(props, errorWriter, mock(ReactiveJwtDecoder.class));
+
+        MockServerWebExchange lectura = MockServerWebExchange.from(
+                MockServerHttpRequest.get("/api/publicaciones/artista/a1/destacadas").build());
+        StepVerifier.create(filter.filter(lectura, passThroughChain)).verifyComplete();
+        assertThat(lectura.getResponse().getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        MockServerWebExchange escritura = MockServerWebExchange.from(
+                MockServerHttpRequest.put("/api/publicaciones/p1/destacar").build());
+        StepVerifier.create(filter.filter(escritura, passThroughChain)).verifyComplete();
+        assertThat(escritura.getResponse().getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
     @Test
@@ -107,6 +140,14 @@ class GatewayFiltersTest {
                         .build());
         StepVerifier.create(filter.filter(adminSinRol, passThroughChain)).verifyComplete();
         assertThat(adminSinRol.getResponse().getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+
+        // La moderacion exige el mismo rol que /api/admin
+        MockServerWebExchange moderacionSinRol = MockServerWebExchange.from(
+                MockServerHttpRequest.get("/api/moderacion/reportes")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer token-valido")
+                        .build());
+        StepVerifier.create(filter.filter(moderacionSinRol, passThroughChain)).verifyComplete();
+        assertThat(moderacionSinRol.getResponse().getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }
 
     @Test
