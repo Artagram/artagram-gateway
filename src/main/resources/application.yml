@@ -8,8 +8,20 @@ spring:
     import:
       - optional:file:.env[.properties]
       - optional:file:../.env[.properties]
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 500ms
   cloud:
     gateway:
+      httpclient:
+        connect-timeout: 2000
+        pool:
+          # Las conexiones se renuevan seguido para repartir la carga entre las
+          # replicas que publica Cloud Map y soltar las de una replica retirada.
+          max-idle-time: 15s
+          max-life-time: 60s
       default-filters:
         - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_FIRST
       routes:
@@ -18,6 +30,17 @@ spring:
           uri: ${AUTH_SERVICE_URL:http://localhost:8084}
           predicates:
             - Path=/api/auth/**, /.well-known/jwks.json
+          filters:
+            - name: Retry
+              args:
+                retries: 2
+                methods: GET
+                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                backoff:
+                  firstBackoff: 50ms
+                  maxBackoff: 300ms
+                  factor: 2
+                  basedOnPreviousValue: false
 
         # 2. Perfiles, Seguidores y Media (presign/servir) -> artagram-users
         # (/api/media/** vivia por error en artagram-lienzo; artagram-users ya
@@ -26,12 +49,36 @@ spring:
           uri: ${USERS_SERVICE_URL:http://localhost:8084}
           predicates:
             - Path=/api/perfil/**, /api/perfiles/**, /api/artistas/**, /api/media/**
+          filters:
+            - name: Retry
+              args:
+                retries: 2
+                methods: GET
+                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                backoff:
+                  firstBackoff: 50ms
+                  maxBackoff: 300ms
+                  factor: 2
+                  basedOnPreviousValue: false
 
         # 3. Feed, Publicaciones, Comentarios, IA y Media -> artagram-feed
         - id: feed-route
           uri: ${FEED_SERVICE_URL:http://localhost:8084}
           predicates:
             - Path=/api/feed/**, /api/publicaciones/**, /api/comentarios/**, /api/ia/**, /api/moderacion/**, /media/**
+          metadata:
+            response-timeout: 15000
+          filters:
+            - name: Retry
+              args:
+                retries: 2
+                methods: GET
+                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                backoff:
+                  firstBackoff: 50ms
+                  maxBackoff: 300ms
+                  factor: 2
+                  basedOnPreviousValue: false
 
         # 4. Chat Personal y Chat de Comunidad (REST) -> artagram-chat
         # (Debe ir antes de canvas-rest-route para que /api/comunidades/{id}/chat vaya a Chat)
@@ -39,6 +86,17 @@ spring:
           uri: ${CHAT_SERVICE_URL:http://localhost:8084}
           predicates:
             - Path=/api/mensajes/**, /api/comunidades/*/chat
+          filters:
+            - name: Retry
+              args:
+                retries: 2
+                methods: GET
+                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                backoff:
+                  firstBackoff: 50ms
+                  maxBackoff: 300ms
+                  factor: 2
+                  basedOnPreviousValue: false
 
         # 5. Comunidades (CRUD/membresia/banner), Lienzo y Modo Fiesta -> artagram-canvas
         # (corte de trafico real: ya cubierto 1:1 por canvas, verificado esta sesion)
@@ -46,6 +104,17 @@ spring:
           uri: ${CANVAS_SERVICE_URL:http://localhost:8088}
           predicates:
             - Path=/api/comunidades/**, /api/fiestas/**
+          filters:
+            - name: Retry
+              args:
+                retries: 2
+                methods: GET
+                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                backoff:
+                  firstBackoff: 50ms
+                  maxBackoff: 300ms
+                  factor: 2
+                  basedOnPreviousValue: false
 
         # 6. KPIs / Dashboard admin -> artagram-users
         # (corte de trafico real: ya es dueño de usuarios.creadoEn/premium y
@@ -55,6 +124,17 @@ spring:
           uri: ${USERS_SERVICE_URL:http://localhost:8084}
           predicates:
             - Path=/api/admin/**
+          filters:
+            - name: Retry
+              args:
+                retries: 2
+                methods: GET
+                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                backoff:
+                  firstBackoff: 50ms
+                  maxBackoff: 300ms
+                  factor: 2
+                  basedOnPreviousValue: false
 
         # 7. WebSocket STOMP (/ws) -> artagram-canvas
         # (corte de trafico real: party, lienzo, banner y chat de comunidad/personal
@@ -69,6 +149,17 @@ spring:
           uri: ${PAYMENT_SERVICE_URL:http://localhost:8089}
           predicates:
             - Path=/api/suscripcion/**, /api/pagos/**
+          filters:
+            - name: Retry
+              args:
+                retries: 2
+                methods: GET
+                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                backoff:
+                  firstBackoff: 50ms
+                  maxBackoff: 300ms
+                  factor: 2
+                  basedOnPreviousValue: false
 
         # 8. Notificaciones (REST + SSE) -> artagram-notifications
         - id: notifications-route
@@ -82,8 +173,17 @@ app:
     jwks-uri: ${AUTH_JWKS_URI:http://localhost:8081/.well-known/jwks.json}
     cors-allowed-origins: ${CORS_ORIGINS:http://localhost:5173}
     rate-limit-per-second: ${GATEWAY_RATE_LIMIT_PER_SEC:120}
+    proxies-confiables: ${GATEWAY_PROXIES_CONFIABLES:0}
+    max-fallos-autenticacion: ${GATEWAY_MAX_FALLOS_AUTH:10}
+    ventana-fallos: ${GATEWAY_VENTANA_FALLOS:1m}
+    duracion-bloqueo: ${GATEWAY_DURACION_BLOQUEO:15m}
 
 management:
+  health:
+    # Si Redis cae, el gateway sigue atendiendo (el bloqueo deja pasar): no
+    # debe marcarse caido ante el ALB por eso.
+    redis:
+      enabled: false
   prometheus:
     metrics:
       export:
@@ -98,6 +198,10 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        spring.cloud.gateway.requests: true
 
 logging:
   level:

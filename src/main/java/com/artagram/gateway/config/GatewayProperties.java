@@ -1,5 +1,6 @@
 package com.artagram.gateway.config;
 
+import java.time.Duration;
 import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -10,6 +11,17 @@ public class GatewayProperties {
     private String jwksUri = "http://localhost:8081/.well-known/jwks.json";
     private List<String> corsAllowedOrigins = List.of("http://localhost:5173");
     private int rateLimitPerSecond = 120;
+
+    /**
+     * Proxies de confianza delante del gateway que agregan X-Forwarded-For
+     * (CloudFront + ALB = 2). Con 0 se usa la direccion de la conexion TCP.
+     */
+    private int proxiesConfiables = 0;
+
+    /** Intentos de autenticacion fallidos permitidos por origen dentro de la ventana. */
+    private int maxFallosAutenticacion = 10;
+    private Duration ventanaFallos = Duration.ofMinutes(1);
+    private Duration duracionBloqueo = Duration.ofMinutes(15);
 
     public boolean isJwtEnabled() {
         return jwtEnabled;
@@ -41,5 +53,37 @@ public class GatewayProperties {
 
     public void setRateLimitPerSecond(int rateLimitPerSecond) {
         this.rateLimitPerSecond = rateLimitPerSecond;
+    }
+
+    public int getProxiesConfiables() {
+        return proxiesConfiables;
+    }
+
+    public void setProxiesConfiables(int proxiesConfiables) {
+        this.proxiesConfiables = proxiesConfiables;
+    }
+
+    public int getMaxFallosAutenticacion() {
+        return maxFallosAutenticacion;
+    }
+
+    public void setMaxFallosAutenticacion(int maxFallosAutenticacion) {
+        this.maxFallosAutenticacion = maxFallosAutenticacion;
+    }
+
+    public Duration getVentanaFallos() {
+        return ventanaFallos;
+    }
+
+    public void setVentanaFallos(Duration ventanaFallos) {
+        this.ventanaFallos = ventanaFallos;
+    }
+
+    public Duration getDuracionBloqueo() {
+        return duracionBloqueo;
+    }
+
+    public void setDuracionBloqueo(Duration duracionBloqueo) {
+        this.duracionBloqueo = duracionBloqueo;
     }
 }

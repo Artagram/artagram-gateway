@@ -2,6 +2,8 @@ package com.artagram.gateway.filter;
 
 import com.artagram.gateway.config.GatewayProperties;
 import com.artagram.gateway.error.ErrorResponseWriter;
+import com.artagram.gateway.seguridad.BloqueoOrigenes;
+import com.artagram.gateway.seguridad.OrigenCliente;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
@@ -17,33 +19,48 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
-import java.util.Optional;
-
 /**
  * Valida tokens JWT RS256 contra el endpoint JWKS de artagram-auth cuando
  * {@code app.gateway.jwt-enabled=true}. Propaga cabeceras X-User-Id y X-User-Role
  * a los microservicios internos y devuelve 401 NO_AUTENTICADO o 403 SIN_PERMISO
- * con el mismo formato del monolito.
+ * con el mismo formato del monolito. Cada rechazo por autenticacion queda
+ * registrado con su origen y motivo, y cuenta para el bloqueo de origenes.
  */
 @Component
 public final class JwtGatewayGlobalFilter implements GlobalFilter, Ordered {
 
     private final GatewayProperties properties;
     private final ErrorResponseWriter errorWriter;
+    private final BloqueoOrigenes bloqueo;
+    private final OrigenCliente origenCliente;
     private volatile ReactiveJwtDecoder jwtDecoder;
 
     @Autowired
+    public JwtGatewayGlobalFilter(GatewayProperties properties, ErrorResponseWriter errorWriter,
+                                  BloqueoOrigenes bloqueo, OrigenCliente origenCliente) {
+        this(properties, errorWriter, null, bloqueo, origenCliente);
+    }
+
     public JwtGatewayGlobalFilter(GatewayProperties properties, ErrorResponseWriter errorWriter) {
-        this.properties = properties;
-        this.errorWriter = errorWriter;
+        this(properties, errorWriter, null, null, null);
     }
 
     public JwtGatewayGlobalFilter(GatewayProperties properties,
                                   ErrorResponseWriter errorWriter,
                                   ReactiveJwtDecoder jwtDecoder) {
+        this(properties, errorWriter, jwtDecoder, null, null);
+    }
+
+    public JwtGatewayGlobalFilter(GatewayProperties properties,
+                                  ErrorResponseWriter errorWriter,
+                                  ReactiveJwtDecoder jwtDecoder,
+                                  BloqueoOrigenes bloqueo,
+                                  OrigenCliente origenCliente) {
         this.properties = properties;
         this.errorWriter = errorWriter;
         this.jwtDecoder = jwtDecoder;
+        this.bloqueo = bloqueo;
+        this.origenCliente = origenCliente;
     }
 
     @Override
@@ -65,27 +82,39 @@ public final class JwtGatewayGlobalFilter implements GlobalFilter, Ordered {
 
         String token = extraerToken(exchange.getRequest());
         if (token == null || token.isBlank()) {
-            return errorWriter.escribir(
-                    exchange,
-                    HttpStatus.UNAUTHORIZED,
-                    "NO_AUTENTICADO",
-                    "Debes iniciar sesión para realizar esta acción"
-            );
+            return rechazar(exchange, path, "SIN_TOKEN", "Debes iniciar sesión para realizar esta acción");
         }
 
         return obtenerDecoder().decode(token)
-                .map(Optional::of)
+                .map(jwt -> new Validacion(jwt, null))
                 // Solo los fallos al validar el token son 401. Si se atraparan
                 // tambien los del servicio destino, quedarian ocultos como sesion expirada.
-                .onErrorResume(ex -> Mono.just(Optional.empty()))
-                .flatMap(jwt -> jwt
-                        .map(valido -> continuar(exchange, chain, path, valido))
-                        .orElseGet(() -> errorWriter.escribir(
-                                exchange,
-                                HttpStatus.UNAUTHORIZED,
-                                "NO_AUTENTICADO",
-                                "Tu sesión expiró o el token no es válido"
-                        )));
+                .onErrorResume(ex -> Mono.just(new Validacion(null, motivo(ex))))
+                .flatMap(validacion -> validacion.jwt() != null
+                        ? continuar(exchange, chain, path, validacion.jwt())
+                        : rechazar(exchange, path, validacion.motivo(), "Tu sesión expiró o el token no es válido"));
+    }
+
+    private record Validacion(Jwt jwt, String motivo) {
+    }
+
+    private Mono<Void> rechazar(ServerWebExchange exchange, String path, String motivo, String mensaje) {
+        Mono<Void> respuesta = errorWriter.escribir(exchange, HttpStatus.UNAUTHORIZED, "NO_AUTENTICADO", mensaje);
+        if (bloqueo == null || origenCliente == null) {
+            return respuesta;
+        }
+        String traceId = exchange.getRequest().getHeaders().getFirst("X-Trace-Id");
+        return bloqueo.registrarFallo(origenCliente.resolver(exchange), path, motivo, traceId)
+                .then(respuesta);
+    }
+
+    /** Distingue el token vencido del alterado o firmado con otra llave, para el registro. */
+    static String motivo(Throwable ex) {
+        String mensaje = ex.getMessage();
+        if (mensaje != null && mensaje.toLowerCase(java.util.Locale.ROOT).contains("expired")) {
+            return "TOKEN_VENCIDO";
+        }
+        return "TOKEN_INVALIDO";
     }
 
     private Mono<Void> continuar(ServerWebExchange exchange, GatewayFilterChain chain, String path, Jwt jwt) {
@@ -113,7 +142,6 @@ public final class JwtGatewayGlobalFilter implements GlobalFilter, Ordered {
         if (path.startsWith("/api/auth/")
                 || path.equals("/.well-known/jwks.json")
                 || path.startsWith("/media/")
-                || path.startsWith("/ws")
                 || path.startsWith("/actuator/health")
                 || path.startsWith("/actuator/prometheus")
                 || path.startsWith("/swagger-ui")

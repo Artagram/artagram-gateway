@@ -2,14 +2,15 @@ package com.artagram.gateway.filter;
 
 import com.artagram.gateway.config.GatewayProperties;
 import com.artagram.gateway.error.ErrorResponseWriter;
+import com.artagram.gateway.seguridad.OrigenCliente;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
-import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -25,11 +26,19 @@ public final class RateLimitGlobalFilter implements GlobalFilter, Ordered {
 
     private final GatewayProperties properties;
     private final ErrorResponseWriter errorWriter;
+    private final OrigenCliente origenCliente;
     private final Map<String, Bucket> buckets = new ConcurrentHashMap<>();
 
     public RateLimitGlobalFilter(GatewayProperties properties, ErrorResponseWriter errorWriter) {
+        this(properties, errorWriter, new OrigenCliente(properties));
+    }
+
+    @Autowired
+    public RateLimitGlobalFilter(GatewayProperties properties, ErrorResponseWriter errorWriter,
+                                 OrigenCliente origenCliente) {
         this.properties = properties;
         this.errorWriter = errorWriter;
+        this.origenCliente = origenCliente;
     }
 
     @Override
@@ -68,10 +77,6 @@ public final class RateLimitGlobalFilter implements GlobalFilter, Ordered {
         if (userId != null && !userId.isBlank()) {
             return "user:" + userId;
         }
-        InetSocketAddress remoteAddress = exchange.getRequest().getRemoteAddress();
-        if (remoteAddress != null && remoteAddress.getAddress() != null) {
-            return "ip:" + remoteAddress.getAddress().getHostAddress();
-        }
-        return "ip:local";
+        return "ip:" + origenCliente.resolver(exchange);
     }
 }
