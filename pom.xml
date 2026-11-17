@@ -23,6 +23,7 @@
         <logstash-encoder.version>7.4</logstash-encoder.version>
         <bucket4j.version>8.10.1</bucket4j.version>
         <jacoco.version>0.8.12</jacoco.version>
+        <jacoco.cobertura.minima>0.90</jacoco.cobertura.minima>
         <spotbugs.version>4.8.6.4</spotbugs.version>
     </properties>
 
@@ -97,6 +98,26 @@
                         <id>report</id>
                         <phase>verify</phase>
                         <goals><goal>report</goal></goals>
+                    </execution>
+                    <!-- El build falla si la cobertura de líneas baja del mínimo. -->
+                    <execution>
+                        <id>check</id>
+                        <phase>verify</phase>
+                        <goals><goal>check</goal></goals>
+                        <configuration>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>${jacoco.cobertura.minima}</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
