@@ -27,6 +27,7 @@ public class BloqueoOrigenes {
     private final GatewayProperties properties;
     private final MeterRegistry registry;
     private final Counter bloqueos;
+    private final Counter peticionesBloqueadas;
 
     public BloqueoOrigenes(AlmacenFallos almacen, GatewayProperties properties, MeterRegistry registry) {
         this.almacen = almacen;
@@ -35,6 +36,19 @@ public class BloqueoOrigenes {
         this.bloqueos = Counter.builder("gateway_origenes_bloqueados_total")
                 .description("Origenes bloqueados por exceso de intentos de autenticacion fallidos")
                 .register(registry);
+        this.peticionesBloqueadas = Counter.builder("gateway_peticiones_bloqueadas_total")
+                .description("Peticiones cortadas con 429 porque su origen esta bloqueado")
+                .register(registry);
+    }
+
+    /**
+     * Registra cada peticion de un origen ya bloqueado: tambien son intentos
+     * del atacante y el escenario 6 pide registrar el 100 %.
+     */
+    public void registrarPeticionBloqueada(String origen, String ruta, String traceId) {
+        peticionesBloqueadas.increment();
+        log.warn("Peticion de un origen bloqueado", kv("evento", "PETICION_BLOQUEADA"),
+                kv("origen", origen), kv("ruta", limpiar(ruta)), kv("traceId", traceId));
     }
 
     public Mono<Boolean> estaBloqueado(String origen) {

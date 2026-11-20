@@ -45,11 +45,14 @@ public final class OrigenBloqueadoGlobalFilter implements GlobalFilter, Ordered 
         if (!properties.isJwtEnabled() || path.startsWith("/actuator/")) {
             return chain.filter(exchange);
         }
-        return bloqueo.estaBloqueado(origenCliente.resolver(exchange))
+        String origen = origenCliente.resolver(exchange);
+        return bloqueo.estaBloqueado(origen)
                 .flatMap(bloqueado -> {
                     if (!Boolean.TRUE.equals(bloqueado)) {
                         return chain.filter(exchange);
                     }
+                    bloqueo.registrarPeticionBloqueada(origen, path,
+                            exchange.getRequest().getHeaders().getFirst("X-Trace-Id"));
                     exchange.getResponse().getHeaders().set(HttpHeaders.RETRY_AFTER,
                             String.valueOf(properties.getDuracionBloqueo().toSeconds()));
                     return errorWriter.escribir(exchange, HttpStatus.TOO_MANY_REQUESTS, "ORIGEN_BLOQUEADO",

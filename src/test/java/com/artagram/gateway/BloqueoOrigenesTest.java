@@ -125,6 +125,7 @@ class BloqueoOrigenesTest {
                 .verifyComplete();
         assertThat(bloqueado.getResponse().getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
         assertThat(bloqueado.getResponse().getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("900");
+        assertThat(registry.get("gateway_peticiones_bloqueadas_total").counter().count()).isEqualTo(1.0);
 
         MockServerWebExchange otro = MockServerWebExchange.from(MockServerHttpRequest.get("/api/feed")
                 .remoteAddress(new InetSocketAddress("10.0.0.10", 1234)).build());
